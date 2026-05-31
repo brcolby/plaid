@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plaid-sheet-sync"
+version = "0.1.0"
+description = "Local personal Plaid balance and holdings sync to Google Sheets."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "google-api-python-client>=2.120.0",
+  "google-auth>=2.28.0",
+  "plaid-python>=20.0.0",
+]
+
+[project.optional-dependencies]
+dev = []
+
+[project.scripts]
+plaid-sheet-sync = "plaid_sheet_sync.cli:main"
+
