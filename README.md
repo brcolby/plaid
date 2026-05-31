@@ -94,7 +94,60 @@ The tool ensures these tabs exist and writes headers when a tab is empty:
 
 ## Scheduling
 
-Daily cron example:
+Recommended setup is macOS `launchd`, using the tracked template in `launchd/com.bcolby.plaid-sheet-sync.plist`. It runs `plaid-sheet-sync sync` every day at 6:15 AM local time and writes logs under `~/.plaid-balance-sync/`.
+
+Before enabling the scheduled job, run one dry run and one real write:
+
+```sh
+cd /Users/bcolby/projects/plaid
+. .venv/bin/activate
+plaid-sheet-sync sync --dry-run
+plaid-sheet-sync sync
+```
+
+Install the LaunchAgent:
+
+```sh
+mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.plaid-balance-sync"
+chmod 700 "$HOME/.plaid-balance-sync"
+cp /Users/bcolby/projects/plaid/launchd/com.bcolby.plaid-sheet-sync.plist "$HOME/Library/LaunchAgents/"
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.bcolby.plaid-sheet-sync.plist"
+```
+
+Run it once immediately:
+
+```sh
+launchctl kickstart -k "gui/$(id -u)/com.bcolby.plaid-sheet-sync"
+```
+
+Check logs:
+
+```sh
+tail -f "$HOME/.plaid-balance-sync/sync.log"
+tail -f "$HOME/.plaid-balance-sync/sync.err.log"
+```
+
+Check launchd status:
+
+```sh
+launchctl print "gui/$(id -u)/com.bcolby.plaid-sheet-sync"
+```
+
+Unload the scheduled job:
+
+```sh
+launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.bcolby.plaid-sheet-sync.plist"
+```
+
+If the plist changes after it has been loaded, reload it:
+
+```sh
+launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.bcolby.plaid-sheet-sync.plist"
+cp /Users/bcolby/projects/plaid/launchd/com.bcolby.plaid-sheet-sync.plist "$HOME/Library/LaunchAgents/"
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.bcolby.plaid-sheet-sync.plist"
+```
+
+Cron also works, but `launchd` is preferred on macOS. Daily cron example:
 
 ```cron
 15 6 * * * cd /Users/bcolby/projects/plaid && /Users/bcolby/projects/plaid/.venv/bin/plaid-sheet-sync sync >> "$HOME/.plaid-balance-sync/sync.log" 2>&1
@@ -105,8 +158,6 @@ Hourly cron example:
 ```cron
 0 * * * * cd /Users/bcolby/projects/plaid && /Users/bcolby/projects/plaid/.venv/bin/plaid-sheet-sync sync >> "$HOME/.plaid-balance-sync/sync.log" 2>&1
 ```
-
-macOS `launchd` can run the same command via `ProgramArguments`; keep the log path under `~/.plaid-balance-sync/`.
 
 ## Development
 

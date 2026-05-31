@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.bcolby.plaid-sheet-sync</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/bcolby/projects/plaid</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/Users/bcolby/projects/plaid/.venv/bin/plaid-sheet-sync</string>
+      <string>sync</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+      <key>Hour</key>
+      <integer>6</integer>
+      <key>Minute</key>
+      <integer>15</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/bcolby/.plaid-balance-sync/sync.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/bcolby/.plaid-balance-sync/sync.err.log</string>
+  </dict>
+</plist>
