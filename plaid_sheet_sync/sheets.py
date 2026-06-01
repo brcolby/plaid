@@ -64,6 +64,19 @@ class GoogleSheetsClient:
             .execute()
         )
 
+    def replace_rows(self, tab: str, headers: list[str], rows: list[list[Any]]) -> None:
+        self.service.spreadsheets().values().clear(
+            spreadsheetId=self.spreadsheet_id,
+            range=f"{tab}!A:ZZ",
+            body={},
+        ).execute()
+        self.service.spreadsheets().values().update(
+            spreadsheetId=self.spreadsheet_id,
+            range=f"{tab}!A1",
+            valueInputOption="RAW",
+            body={"values": [headers, *rows]},
+        ).execute()
+
 
 def _build_sheets_service(service_account_json: str) -> Any:
     try:
@@ -78,4 +91,3 @@ def _build_sheets_service(service_account_json: str) -> Any:
         scopes=scopes,
     )
     return build("sheets", "v4", credentials=credentials, cache_discovery=False)
-

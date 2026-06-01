@@ -88,9 +88,12 @@ plaid-sheet-sync sync
 
 The tool ensures these tabs exist and writes headers when a tab is empty:
 
+- `current_balances`
 - `balance_snapshots`
 - `holding_snapshots`
 - `sync_runs`
+
+`balance_snapshots`, `holding_snapshots`, and `sync_runs` are append-only history tabs. `current_balances` is a static current-state frame: every sync clears the tab and rewrites the latest balance rows so formulas can reference stable cells.
 
 ## Scheduling
 

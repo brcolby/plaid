@@ -11,6 +11,7 @@ from .state import StateStore, utc_now
 
 
 SHEET_HEADERS = {
+    "current_balances": BALANCE_HEADERS,
     "balance_snapshots": BALANCE_HEADERS,
     "holding_snapshots": HOLDING_HEADERS,
     "sync_runs": SYNC_RUN_HEADERS,
@@ -95,6 +96,7 @@ def run_sync(
         print(
             json.dumps(
                 {
+                    "current_balances": [BALANCE_HEADERS, *all_balance_rows],
                     "balance_snapshots": [BALANCE_HEADERS, *all_balance_rows],
                     "holding_snapshots": [HOLDING_HEADERS, *all_holding_rows],
                     "sync_runs": [SYNC_RUN_HEADERS, sync_run_row],
@@ -107,6 +109,7 @@ def run_sync(
         if sheets is None:
             raise ValueError("sheets client is required unless dry_run=True")
         sheets.ensure_tabs(SHEET_HEADERS)
+        sheets.replace_rows("current_balances", BALANCE_HEADERS, all_balance_rows)
         sheets.append_rows("balance_snapshots", all_balance_rows)
         sheets.append_rows("holding_snapshots", all_holding_rows)
         sheets.append_rows("sync_runs", [sync_run_row])

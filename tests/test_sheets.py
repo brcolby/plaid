@@ -16,10 +16,20 @@ class _Execute:
 class _Values:
     def __init__(self):
         self.append_calls = []
+        self.clear_calls = []
+        self.update_calls = []
 
     def append(self, **kwargs):
         self.append_calls.append(kwargs)
         return _Execute({"updates": {"updatedRows": len(kwargs["body"]["values"])}})
+
+    def clear(self, **kwargs):
+        self.clear_calls.append(kwargs)
+        return _Execute()
+
+    def update(self, **kwargs):
+        self.update_calls.append(kwargs)
+        return _Execute()
 
 
 class _Spreadsheets:
@@ -56,6 +66,36 @@ class SheetsTests(TestCase):
                     "valueInputOption": "RAW",
                     "insertDataOption": "INSERT_ROWS",
                     "body": {"values": [["a", "b"]]},
+                }
+            ],
+        )
+
+    def test_replace_rows_clears_and_rewrites_tab(self) -> None:
+        client = object.__new__(GoogleSheetsClient)
+        client.spreadsheet_id = "sheet-id"
+        client.service = _Service()
+
+        client.replace_rows("current_balances", ["h1", "h2"], [["a", "b"]])
+
+        values = client.service.spreadsheets_obj.values_obj
+        self.assertEqual(
+            values.clear_calls,
+            [
+                {
+                    "spreadsheetId": "sheet-id",
+                    "range": "current_balances!A:ZZ",
+                    "body": {},
+                }
+            ],
+        )
+        self.assertEqual(
+            values.update_calls,
+            [
+                {
+                    "spreadsheetId": "sheet-id",
+                    "range": "current_balances!A1",
+                    "valueInputOption": "RAW",
+                    "body": {"values": [["h1", "h2"], ["a", "b"]]},
                 }
             ],
         )
