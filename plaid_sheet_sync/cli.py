@@ -50,7 +50,10 @@ def _build_parser() -> argparse.ArgumentParser:
     link.add_argument("--no-browser", action="store_true")
     link.add_argument(
         "--products",
-        help="Comma-separated Plaid Link products for this institution, e.g. auth or investments.",
+        help=(
+            "Comma-separated Plaid Link products for this institution, "
+            "e.g. auth, investments, or liabilities."
+        ),
     )
 
     sync = subparsers.add_parser(
@@ -60,6 +63,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sync.add_argument("--dry-run", action="store_true", help="Print rows without writing Sheets.")
     sync.add_argument("--skip-holdings", action="store_true", help="Only poll account balances.")
+    sync.add_argument(
+        "--include-liabilities",
+        action="store_true",
+        help="Also poll Plaid Liabilities and append rows to liability_snapshots.",
+    )
 
     subparsers.add_parser(
         "list",
@@ -99,11 +107,13 @@ def _sync(args: argparse.Namespace) -> int:
         sheets=sheets,
         dry_run=args.dry_run,
         skip_holdings=args.skip_holdings,
+        include_liabilities=args.include_liabilities,
     )
     print(
         "sync complete: "
         f"{result.balance_rows} balance rows, "
         f"{result.holding_rows} holding rows, "
+        f"{result.liability_rows} liability rows, "
         f"{result.success_count} successes, "
         f"{result.failure_count} failures"
     )

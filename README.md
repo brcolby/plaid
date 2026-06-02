@@ -1,13 +1,23 @@
-# Plaid Balance + Holdings Sync
+# Plaid Sheet Sync
 
-Local-only Python tooling for polling personal Plaid Production/Trial account balances and investment holdings, then appending snapshots to Google Sheets.
+Local Python tooling for linking Plaid institutions, polling account data, and writing snapshots to Google Sheets.
+
+By default the sync writes balances and investment holdings only. Liabilities are optional and must be enabled explicitly so existing spreadsheets keep their current shape.
+
+## What It Syncs
+
+- Account balances from Plaid Accounts Balance
+- Investment holdings from Plaid Investments, when the linked Item has investment accounts
+- Debt/liability snapshots from Plaid Liabilities, only when `--include-liabilities` is used
+
+The tool never initiates payments or payoff flows.
 
 ## Security Notes
 
 - Never commit `.env`, Plaid secrets, Plaid access tokens, Google service-account JSON, SQLite state, logs, or token exports.
 - Runtime state defaults to `~/.plaid-balance-sync/state.sqlite`, outside this repo.
-- The Plaid production secret should be rotated in the Plaid dashboard before long-term use because it was shared in chat.
-- Before committing, run:
+- Share the destination spreadsheet only with the Google service-account email that needs write access.
+- Before committing, check for secrets:
 
 ```sh
 git status --short
@@ -15,11 +25,9 @@ git diff --cached
 git diff
 ```
 
-Confirm no secret values, access tokens, or service-account JSON are present.
-
 ## Setup
 
-1. Create a virtual environment and install the project:
+Create a virtual environment and install the project:
 
 ```sh
 python3 -m venv .venv
@@ -27,7 +35,7 @@ python3 -m venv .venv
 pip install -e '.[dev]'
 ```
 
-2. Copy `.env.example` to `.env` and fill in local values:
+Copy the example environment file and fill in local values:
 
 ```sh
 cp .env.example .env
@@ -37,12 +45,12 @@ Required values:
 
 - `PLAID_CLIENT_ID`
 - `PLAID_SECRET`
-- `PLAID_ENV=production`
-- `PLAID_LINK_PRODUCTS=auth`
-- `GOOGLE_SERVICE_ACCOUNT_JSON=/absolute/path/to/google-service-account.json`
+- `PLAID_ENV`, usually `production`
+- `PLAID_LINK_PRODUCTS`, usually `auth`
+- `GOOGLE_SERVICE_ACCOUNT_JSON`
 - `GOOGLE_SHEET_ID`
 
-3. In Google Sheets, share the target spreadsheet with the service account email from the JSON key.
+In Google Sheets, share the target spreadsheet with the service account email from the JSON key.
 
 ## Link Institutions
 
@@ -52,21 +60,28 @@ Run the local Plaid Link flow:
 plaid-sheet-sync link
 ```
 
-Use a product set that matches the institution type:
+Use a product set that matches the institution and account type:
 
 ```sh
-# Depository accounts such as Wells Fargo and Ally Savings.
+# Depository accounts such as checking and savings.
 plaid-sheet-sync link --products auth
 
-# Investment and retirement accounts such as Schwab, Vanguard, and Fidelity 401k.
+# Investment and retirement accounts.
 plaid-sheet-sync link --products investments
+
+# Credit cards, student loans, and mortgages.
+plaid-sheet-sync link --products liabilities
 ```
 
-If your Plaid Trial configuration allows Balance as a Link product directly, you can also use `--products balance`. The sync command uses `/accounts/balance/get` for every linked Item and `/investments/holdings/get` where holdings are available.
+You can also request multiple products when your Plaid environment and institution support them:
 
-If your browser does not open automatically, visit the printed `http://127.0.0.1:8080` URL. Repeat for Schwab, Vanguard, Wells Fargo, Ally Savings, and Fidelity 401k as available in your Plaid Trial/Production dashboard.
+```sh
+plaid-sheet-sync link --products auth,liabilities
+```
 
-List linked Items without printing tokens:
+If your browser does not open automatically, visit the printed local URL. Repeat the link flow for each institution you want to sync.
+
+List linked Items without printing access tokens:
 
 ```sh
 plaid-sheet-sync list
@@ -86,81 +101,48 @@ Append balance and holding snapshots:
 plaid-sheet-sync sync
 ```
 
-The tool ensures these tabs exist and writes headers when a tab is empty:
+The default sync ensures these tabs exist:
 
 - `current_balances`
 - `balance_snapshots`
 - `holding_snapshots`
 - `sync_runs`
 
-`balance_snapshots`, `holding_snapshots`, and `sync_runs` are append-only history tabs. `current_balances` is a static current-state frame: every sync clears the tab and rewrites the latest balance rows so formulas can reference stable cells.
+`balance_snapshots`, `holding_snapshots`, and `sync_runs` are append-only history tabs. `current_balances` is rewritten on every sync with the latest balance rows so formulas can reference stable cells.
+
+## Optional Liabilities
+
+Liabilities are opt-in. A normal `plaid-sheet-sync sync` does not call Plaid Liabilities, does not create a `liability_snapshots` tab, and does not change the existing tab layout.
+
+To sync debt data:
+
+```sh
+plaid-sheet-sync link --products liabilities
+plaid-sheet-sync sync --include-liabilities
+```
+
+Liability rows are appended to `liability_snapshots` and include current debt balances, credit APR summaries, student loan or mortgage interest rates, next payment amounts and due dates, loan status, and related institution/account identifiers.
+
+If you do not have liabilities or do not want the extra tab, do not pass `--include-liabilities`.
 
 ## Scheduling
 
-Recommended setup is macOS `launchd`, using the tracked template in `launchd/com.bcolby.plaid-sheet-sync.plist`. It runs `plaid-sheet-sync sync` every day at 6:15 AM local time and writes logs under `~/.plaid-balance-sync/`.
-
-Before enabling the scheduled job, run one dry run and one real write:
+Any scheduler that can run a shell command works. Run a dry run first, then a real write:
 
 ```sh
-cd /Users/bcolby/projects/plaid
+cd /path/to/plaid-sheet-sync
 . .venv/bin/activate
 plaid-sheet-sync sync --dry-run
 plaid-sheet-sync sync
 ```
 
-Install the LaunchAgent:
-
-```sh
-mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.plaid-balance-sync"
-chmod 700 "$HOME/.plaid-balance-sync"
-cp /Users/bcolby/projects/plaid/launchd/com.bcolby.plaid-sheet-sync.plist "$HOME/Library/LaunchAgents/"
-launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.bcolby.plaid-sheet-sync.plist"
-```
-
-Run it once immediately:
-
-```sh
-launchctl kickstart -k "gui/$(id -u)/com.bcolby.plaid-sheet-sync"
-```
-
-Check logs:
-
-```sh
-tail -f "$HOME/.plaid-balance-sync/sync.log"
-tail -f "$HOME/.plaid-balance-sync/sync.err.log"
-```
-
-Check launchd status:
-
-```sh
-launchctl print "gui/$(id -u)/com.bcolby.plaid-sheet-sync"
-```
-
-Unload the scheduled job:
-
-```sh
-launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.bcolby.plaid-sheet-sync.plist"
-```
-
-If the plist changes after it has been loaded, reload it:
-
-```sh
-launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.bcolby.plaid-sheet-sync.plist"
-cp /Users/bcolby/projects/plaid/launchd/com.bcolby.plaid-sheet-sync.plist "$HOME/Library/LaunchAgents/"
-launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.bcolby.plaid-sheet-sync.plist"
-```
-
-Cron also works, but `launchd` is preferred on macOS. Daily cron example:
+Example cron entry for a daily sync:
 
 ```cron
-15 6 * * * cd /Users/bcolby/projects/plaid && /Users/bcolby/projects/plaid/.venv/bin/plaid-sheet-sync sync >> "$HOME/.plaid-balance-sync/sync.log" 2>&1
+15 6 * * * cd /path/to/plaid-sheet-sync && /path/to/plaid-sheet-sync/.venv/bin/plaid-sheet-sync sync >> "$HOME/.plaid-balance-sync/sync.log" 2>&1
 ```
 
-Hourly cron example:
-
-```cron
-0 * * * * cd /Users/bcolby/projects/plaid && /Users/bcolby/projects/plaid/.venv/bin/plaid-sheet-sync sync >> "$HOME/.plaid-balance-sync/sync.log" 2>&1
-```
+For macOS, the repo includes a `launchd` example that can be copied and adjusted for your local checkout path.
 
 ## Development
 

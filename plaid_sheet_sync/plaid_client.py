@@ -45,6 +45,11 @@ class PlaidService:
         request = imports["InvestmentsHoldingsGetRequest"](access_token=access_token)
         return to_plain(self.client.investments_holdings_get(request))
 
+    def get_liabilities(self, access_token: str) -> dict[str, Any]:
+        imports = _plaid_imports()
+        request = imports["LiabilitiesGetRequest"](access_token=access_token)
+        return to_plain(self.client.liabilities_get(request))
+
 
 def to_plain(value: Any) -> Any:
     if hasattr(value, "to_dict"):
@@ -95,6 +100,7 @@ def _plaid_imports() -> dict[str, Any]:
         from plaid.model.country_code import CountryCode
         from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
         from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
+        from plaid.model.liabilities_get_request import LiabilitiesGetRequest
         from plaid.model.link_token_create_request import LinkTokenCreateRequest
         from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
         from plaid.model.products import Products
@@ -106,6 +112,7 @@ def _plaid_imports() -> dict[str, Any]:
         "CountryCode": CountryCode,
         "InvestmentsHoldingsGetRequest": InvestmentsHoldingsGetRequest,
         "ItemPublicTokenExchangeRequest": ItemPublicTokenExchangeRequest,
+        "LiabilitiesGetRequest": LiabilitiesGetRequest,
         "LinkTokenCreateRequest": LinkTokenCreateRequest,
         "LinkTokenCreateRequestUser": LinkTokenCreateRequestUser,
         "Products": Products,

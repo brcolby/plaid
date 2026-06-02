@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from unittest import TestCase
 
-from plaid_sheet_sync.rows import BALANCE_HEADERS, HOLDING_HEADERS, balance_rows, holding_rows
+from plaid_sheet_sync.rows import (
+    BALANCE_HEADERS,
+    HOLDING_HEADERS,
+    LIABILITY_HEADERS,
+    balance_rows,
+    holding_rows,
+    liability_rows,
+)
 from plaid_sheet_sync.state import StoredItem
 
 
@@ -76,6 +83,79 @@ class RowMappingTests(TestCase):
         self.assertEqual(row["ticker_symbol"], "VTI")
         self.assertEqual(row["value"], 875.0)
         self.assertEqual(row["currency"], "USD")
+
+    def test_liability_rows_maps_credit_and_student_debts(self) -> None:
+        item = _item()
+        response = {
+            "accounts": [
+                {
+                    "account_id": "credit-1",
+                    "name": "Credit Card",
+                    "type": "credit",
+                    "subtype": "credit card",
+                    "mask": "2222",
+                    "balances": {
+                        "current": 1200.0,
+                        "available": 3800.0,
+                        "limit": 5000.0,
+                        "iso_currency_code": "USD",
+                    },
+                },
+                {
+                    "account_id": "student-1",
+                    "name": "Student Loan",
+                    "type": "loan",
+                    "subtype": "student",
+                    "balances": {"current": 9500.0, "iso_currency_code": "USD"},
+                },
+            ],
+            "liabilities": {
+                "credit": [
+                    {
+                        "account_id": "credit-1",
+                        "aprs": [
+                            {
+                                "apr_type": "purchase_apr",
+                                "apr_percentage": 21.24,
+                                "balance_subject_to_apr": 1200.0,
+                                "interest_charge_amount": 12.5,
+                            }
+                        ],
+                        "minimum_payment_amount": 35.0,
+                        "next_payment_due_date": "2026-06-20",
+                        "last_statement_balance": 1100.0,
+                        "is_overdue": False,
+                    }
+                ],
+                "student": [
+                    {
+                        "account_id": "student-1",
+                        "interest_rate_percentage": 4.75,
+                        "minimum_payment_amount": 125.0,
+                        "next_payment_due_date": "2026-06-15",
+                        "loan_name": "Direct Loan",
+                        "loan_status": {"type": "repayment", "description": "In repayment"},
+                        "repayment_plan": {"type": "standard", "description": "Standard"},
+                        "origination_principal_amount": 10000.0,
+                        "ytd_interest_paid": 50.0,
+                        "ytd_principal_paid": 250.0,
+                    }
+                ],
+            },
+        }
+
+        rows = liability_rows(item, response, "2026-05-31T12:00:00+00:00")
+
+        self.assertEqual(len(rows), 2)
+        credit = dict(zip(LIABILITY_HEADERS, rows[0], strict=True))
+        student = dict(zip(LIABILITY_HEADERS, rows[1], strict=True))
+        self.assertEqual(credit["liability_type"], "credit")
+        self.assertEqual(credit["current_balance"], 1200.0)
+        self.assertIn("purchase_apr:21.24%", credit["apr_summary"])
+        self.assertEqual(credit["next_payment_amount"], 35.0)
+        self.assertEqual(student["liability_type"], "student")
+        self.assertEqual(student["interest_rate_percentage"], 4.75)
+        self.assertEqual(student["loan_status"], "repayment: In repayment")
 
 
 def _item() -> StoredItem:

@@ -46,6 +46,35 @@ class SyncTests(TestCase):
         self.assertEqual(result.balance_rows, 1)
         self.assertEqual(sheets.replaced_tabs, ["current_balances"])
         self.assertEqual(sheets.appended_tabs, ["balance_snapshots", "sync_runs"])
+        self.assertNotIn("liability_snapshots", sheets.headers_by_tab)
+
+    def test_sync_appends_liabilities_only_when_enabled(self) -> None:
+        with TemporaryDirectory() as tmpdir:
+            state = StateStore(Path(tmpdir) / "state.sqlite")
+            state.upsert_item(
+                item_id="item-1",
+                access_token="redacted-token",
+                institution_id="ins_1",
+                institution_name="Bank",
+            )
+            plaid = _FakePlaidWithLiabilities()
+            sheets = _FakeSheets()
+
+            result = run_sync(
+                state=state,
+                plaid=plaid,
+                sheets=sheets,
+                dry_run=False,
+                include_liabilities=True,
+            )
+
+        self.assertEqual(result.liability_rows, 1)
+        self.assertEqual(plaid.liability_calls, 1)
+        self.assertIn("liability_snapshots", sheets.headers_by_tab)
+        self.assertEqual(
+            sheets.appended_tabs,
+            ["balance_snapshots", "liability_snapshots", "sync_runs"],
+        )
 
 
 class _FakePlaid:
@@ -68,6 +97,36 @@ class _FakePlaid:
     def get_holdings(self, access_token: str) -> dict:
         self.holdings_calls += 1
         raise AssertionError("holdings should not be called for depository accounts")
+
+
+class _FakePlaidWithLiabilities(_FakePlaid):
+    def __init__(self) -> None:
+        super().__init__()
+        self.liability_calls = 0
+
+    def get_liabilities(self, access_token: str) -> dict:
+        self.liability_calls += 1
+        return {
+            "accounts": [
+                {
+                    "account_id": "credit-1",
+                    "name": "Credit Card",
+                    "type": "credit",
+                    "subtype": "credit card",
+                    "balances": {"current": 42.0, "limit": 1000.0, "iso_currency_code": "USD"},
+                }
+            ],
+            "liabilities": {
+                "credit": [
+                    {
+                        "account_id": "credit-1",
+                        "aprs": [{"apr_type": "purchase_apr", "apr_percentage": 19.99}],
+                        "minimum_payment_amount": 25.0,
+                        "next_payment_due_date": "2026-06-20",
+                    }
+                ]
+            },
+        }
 
 
 class _FakeSheets:

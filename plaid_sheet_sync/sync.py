@@ -5,7 +5,15 @@ import time
 from dataclasses import dataclass
 
 from .plaid_client import PlaidService
-from .rows import BALANCE_HEADERS, HOLDING_HEADERS, SYNC_RUN_HEADERS, balance_rows, holding_rows
+from .rows import (
+    BALANCE_HEADERS,
+    HOLDING_HEADERS,
+    LIABILITY_HEADERS,
+    SYNC_RUN_HEADERS,
+    balance_rows,
+    holding_rows,
+    liability_rows,
+)
 from .sheets import GoogleSheetsClient
 from .state import StateStore, utc_now
 
@@ -16,12 +24,14 @@ SHEET_HEADERS = {
     "holding_snapshots": HOLDING_HEADERS,
     "sync_runs": SYNC_RUN_HEADERS,
 }
+LIABILITY_SHEET_HEADERS = {**SHEET_HEADERS, "liability_snapshots": LIABILITY_HEADERS}
 
 
 @dataclass(frozen=True)
 class SyncResult:
     balance_rows: int
     holding_rows: int
+    liability_rows: int
     success_count: int
     failure_count: int
     errors: list[str]
@@ -34,12 +44,14 @@ def run_sync(
     sheets: GoogleSheetsClient | None,
     dry_run: bool,
     skip_holdings: bool = False,
+    include_liabilities: bool = False,
 ) -> SyncResult:
     started_at = utc_now()
     start_time = time.monotonic()
     items = state.list_items()
     all_balance_rows = []
     all_holding_rows = []
+    all_liability_rows = []
     errors: list[str] = []
     success_count = 0
     failure_count = 0
@@ -72,10 +84,23 @@ def run_sync(
                 failure_count += 1
                 errors.append(f"{item.institution_name or item.item_id} holdings: {exc}")
 
+        if include_liabilities:
+            try:
+                liability_response = plaid.get_liabilities(item.access_token)
+                accounts = liability_response.get("accounts", [])
+                state.upsert_accounts(item.item_id, accounts)
+                rows = liability_rows(item, liability_response, polled_at)
+                all_liability_rows.extend(rows)
+                success_count += 1
+                item_ok = True
+            except Exception as exc:  # noqa: BLE001 - keep scheduled runs alive per Item.
+                failure_count += 1
+                errors.append(f"{item.institution_name or item.item_id} liabilities: {exc}")
+
         state.mark_item_result(
             item.item_id,
             success=item_ok,
-            error=None if item_ok else "; ".join(errors[-2:]),
+            error=None if item_ok else "; ".join(errors[-3:]),
         )
 
     ended_at = utc_now()
@@ -93,14 +118,17 @@ def run_sync(
     ]
 
     if dry_run:
+        payload = {
+            "current_balances": [BALANCE_HEADERS, *all_balance_rows],
+            "balance_snapshots": [BALANCE_HEADERS, *all_balance_rows],
+            "holding_snapshots": [HOLDING_HEADERS, *all_holding_rows],
+            "sync_runs": [SYNC_RUN_HEADERS, sync_run_row],
+        }
+        if include_liabilities:
+            payload["liability_snapshots"] = [LIABILITY_HEADERS, *all_liability_rows]
         print(
             json.dumps(
-                {
-                    "current_balances": [BALANCE_HEADERS, *all_balance_rows],
-                    "balance_snapshots": [BALANCE_HEADERS, *all_balance_rows],
-                    "holding_snapshots": [HOLDING_HEADERS, *all_holding_rows],
-                    "sync_runs": [SYNC_RUN_HEADERS, sync_run_row],
-                },
+                payload,
                 indent=2,
                 default=str,
             )
@@ -108,15 +136,19 @@ def run_sync(
     else:
         if sheets is None:
             raise ValueError("sheets client is required unless dry_run=True")
-        sheets.ensure_tabs(SHEET_HEADERS)
+        headers_by_tab = LIABILITY_SHEET_HEADERS if include_liabilities else SHEET_HEADERS
+        sheets.ensure_tabs(headers_by_tab)
         sheets.replace_rows("current_balances", BALANCE_HEADERS, all_balance_rows)
         sheets.append_rows("balance_snapshots", all_balance_rows)
         sheets.append_rows("holding_snapshots", all_holding_rows)
+        if include_liabilities:
+            sheets.append_rows("liability_snapshots", all_liability_rows)
         sheets.append_rows("sync_runs", [sync_run_row])
 
     return SyncResult(
         balance_rows=len(all_balance_rows),
         holding_rows=len(all_holding_rows),
+        liability_rows=len(all_liability_rows),
         success_count=success_count,
         failure_count=failure_count,
         errors=errors,
