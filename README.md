@@ -52,6 +52,13 @@ Required values:
 
 In Google Sheets, share the target spreadsheet with the service account email from the JSON key.
 
+Optional Plaid transport settings:
+
+- `PLAID_REQUEST_TIMEOUT_SECONDS`, default `60`, bounds each Plaid HTTP request.
+- `PLAID_MAX_RETRIES`, default `2`, retries transient transport errors and retryable Plaid server responses.
+
+These settings keep a scheduled sync from hanging indefinitely if a bank or Plaid connection stalls. Balance calls are real-time and can occasionally take 30 seconds or more, so avoid setting the timeout too low.
+
 ## Link Institutions
 
 Run the local Plaid Link flow:

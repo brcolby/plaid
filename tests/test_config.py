@@ -32,6 +32,33 @@ class ConfigTests(TestCase):
         self.assertEqual(config.plaid_secret, "secret")
         self.assertEqual(config.plaid_env, "production")
         self.assertEqual(config.plaid_link_products, ("auth",))
+        self.assertEqual(config.plaid_request_timeout_seconds, 60)
+        self.assertEqual(config.plaid_max_retries, 2)
+
+    def test_load_config_reads_plaid_timeout_and_retries(self) -> None:
+        with TemporaryDirectory() as tmpdir, patch.dict("os.environ", {}, clear=True):
+            env_file = Path(tmpdir) / ".env"
+            env_file.write_text(
+                "\n".join(
+                    [
+                        "PLAID_REQUEST_TIMEOUT_SECONDS=45.5",
+                        "PLAID_MAX_RETRIES=3",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            config = load_config(env_file)
+
+        self.assertEqual(config.plaid_request_timeout_seconds, 45.5)
+        self.assertEqual(config.plaid_max_retries, 3)
+
+    def test_invalid_plaid_timeout_fails(self) -> None:
+        with TemporaryDirectory() as tmpdir, patch.dict("os.environ", {}, clear=True):
+            env_file = Path(tmpdir) / ".env"
+            env_file.write_text("PLAID_REQUEST_TIMEOUT_SECONDS=0\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ConfigError, "PLAID_REQUEST_TIMEOUT_SECONDS"):
+                load_config(env_file)
 
     def test_required_plaid_config_fails_without_secret(self) -> None:
         with TemporaryDirectory() as tmpdir, patch.dict("os.environ", {}, clear=True):

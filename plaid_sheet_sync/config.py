@@ -18,6 +18,8 @@ class AppConfig:
     plaid_secret: str | None
     plaid_env: str
     plaid_link_products: tuple[str, ...]
+    plaid_request_timeout_seconds: float
+    plaid_max_retries: int
     google_service_account_json: Path | None
     google_sheet_id: str | None
     state_db: Path
@@ -41,6 +43,14 @@ def load_config(env_file: Path | str = ".env") -> AppConfig:
         plaid_secret=get("PLAID_SECRET"),
         plaid_env=(get("PLAID_ENV", "production") or "production").lower(),
         plaid_link_products=_parse_csv(get("PLAID_LINK_PRODUCTS", "auth") or "auth"),
+        plaid_request_timeout_seconds=_parse_positive_float(
+            "PLAID_REQUEST_TIMEOUT_SECONDS",
+            get("PLAID_REQUEST_TIMEOUT_SECONDS", "60") or "60",
+        ),
+        plaid_max_retries=_parse_non_negative_int(
+            "PLAID_MAX_RETRIES",
+            get("PLAID_MAX_RETRIES", "2") or "2",
+        ),
         google_service_account_json=Path(google_json).expanduser() if google_json else None,
         google_sheet_id=get("GOOGLE_SHEET_ID"),
         state_db=state_path,
@@ -98,3 +108,23 @@ def _read_env_file(path: Path) -> dict[str, str]:
 
 def _parse_csv(value: str) -> tuple[str, ...]:
     return tuple(part.strip().lower() for part in value.split(",") if part.strip())
+
+
+def _parse_positive_float(name: str, value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be a positive number") from exc
+    if parsed <= 0:
+        raise ConfigError(f"{name} must be a positive number")
+    return parsed
+
+
+def _parse_non_negative_int(name: str, value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be a non-negative integer") from exc
+    if parsed < 0:
+        raise ConfigError(f"{name} must be a non-negative integer")
+    return parsed

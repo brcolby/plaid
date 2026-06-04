@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+import time
 from typing import Any
 
 from .config import AppConfig, ConfigError
@@ -25,30 +26,43 @@ class PlaidService:
             language="en",
             user=imports["LinkTokenCreateRequestUser"](client_user_id="personal-local-user"),
         )
-        response = self.client.link_token_create(request)
+        response = self._call_with_retries(self.client.link_token_create, request)
         data = to_plain(response)
         return data["link_token"]
 
     def exchange_public_token(self, public_token: str) -> dict[str, Any]:
         imports = _plaid_imports()
         request = imports["ItemPublicTokenExchangeRequest"](public_token=public_token)
-        response = self.client.item_public_token_exchange(request)
+        response = self._call_with_retries(self.client.item_public_token_exchange, request)
         return to_plain(response)
 
     def get_balances(self, access_token: str) -> dict[str, Any]:
         imports = _plaid_imports()
         request = imports["AccountsBalanceGetRequest"](access_token=access_token)
-        return to_plain(self.client.accounts_balance_get(request))
+        return to_plain(self._call_with_retries(self.client.accounts_balance_get, request))
 
     def get_holdings(self, access_token: str) -> dict[str, Any]:
         imports = _plaid_imports()
         request = imports["InvestmentsHoldingsGetRequest"](access_token=access_token)
-        return to_plain(self.client.investments_holdings_get(request))
+        return to_plain(self._call_with_retries(self.client.investments_holdings_get, request))
 
     def get_liabilities(self, access_token: str) -> dict[str, Any]:
         imports = _plaid_imports()
         request = imports["LiabilitiesGetRequest"](access_token=access_token)
-        return to_plain(self.client.liabilities_get(request))
+        return to_plain(self._call_with_retries(self.client.liabilities_get, request))
+
+    def _call_with_retries(self, call: Callable[..., Any], request: Any) -> Any:
+        for attempt in range(self.config.plaid_max_retries + 1):
+            try:
+                return call(
+                    request,
+                    _request_timeout=self.config.plaid_request_timeout_seconds,
+                )
+            except Exception as exc:
+                if attempt >= self.config.plaid_max_retries or not _is_retryable_error(exc):
+                    raise
+                time.sleep(min(2**attempt, 5))
+        raise RuntimeError("unreachable")
 
 
 def to_plain(value: Any) -> Any:
@@ -92,6 +106,25 @@ def _build_plaid_client(config: AppConfig) -> Any:
         },
     )
     return plaid_api.PlaidApi(plaid.ApiClient(configuration))
+
+
+def _is_retryable_error(exc: Exception) -> bool:
+    try:
+        import urllib3
+    except ImportError:
+        urllib3 = None
+
+    if urllib3 is not None and isinstance(exc, urllib3.exceptions.HTTPError):
+        return True
+
+    try:
+        from plaid.exceptions import ApiException
+    except ImportError:
+        return False
+
+    if isinstance(exc, ApiException):
+        return exc.status in {0, 408, 429, 500, 502, 503, 504}
+    return False
 
 
 def _plaid_imports() -> dict[str, Any]:
